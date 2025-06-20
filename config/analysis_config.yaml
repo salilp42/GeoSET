@@ -1,0 +1,135 @@
+# Geometric Analysis Configuration
+# Configuration parameters for saccadic eye movement analysis
+
+# Data preprocessing settings
+preprocessing:
+  peak_normalize: true
+  trim_points: 5  # Remove first and last 5 points to eliminate fixation drift and glissades
+  quality_threshold: 0.1
+  harmonize_labels: true
+  valid_labels: [1, 4, 5, 6]  # De Novo PD, Medicated PD, PSP, HC
+
+# Latent space construction
+latent_space:
+  variance_threshold: 0.95  # Retain 95% of variance
+  use_randomized_svd: true  # For computational efficiency with large datasets
+  random_state: 42
+  umap_params:
+    n_neighbors: 15
+    min_dist: 0.1
+    metric: 'euclidean'
+    random_state: 42
+
+# Feature extraction settings
+features:
+  include_biomarkers: true
+  include_spectral: true
+  include_kinematic: true
+  include_temporal: true
+  
+  # Clinical biomarker parameters
+  biomarkers:
+    tremor_frequency_range: [8, 15]  # Hz
+    endpoint_window: [25, 30]  # Final timepoints for variability
+    wavelet_type: 'db4'
+    wavelet_levels: [2, 3]
+
+# Classification settings
+classification:
+  cv_folds: 5
+  random_state: 42
+  use_class_weights: true
+  difficulty_threshold: 0.9
+  
+  # Feature Scalpel strategy
+  feature_scalpel:
+    comprehensive_features_dim: 1263
+    biomarker_features_dim: 104
+    easy_pairs: ['PSP_vs_others', 'medicated_vs_denovo']
+    hard_pairs: ['PD_vs_controls']
+
+# Validation framework
+validation:
+  n_permutations: 1000
+  run_ablation: true
+  run_power_analysis: true
+  run_fold_analysis: true
+  alpha: 0.05
+  
+  # Ablation study groups
+  ablation_groups:
+    - 'temporal'
+    - 'kinematic' 
+    - 'spectral'
+    - 'biomarker'
+
+# Statistical analysis
+statistics:
+  alpha: 0.05
+  multiple_comparison_correction: 'fdr_bh'
+  effect_size_method: 'cohen_d'
+  power_analysis_method: 'post_hoc'
+  
+  # Medication effect analysis
+  medication_analysis:
+    test_method: 'mannwhitneyu'
+    biomarkers: ['tremor_power', 'peak_velocity', 'jerk_cost', 'velocity_asymmetry', 'endpoint_variability']
+
+# Visualization settings
+visualization:
+  figure_format: 'png'
+  dpi: 300
+  style: 'publication'
+  color_palette: 'okabe_ito'  # Color-blind friendly
+  
+  # Figure-specific settings
+  figures:
+    geometry:
+      width: 14
+      height: 6
+      point_size: 20
+    topology:
+      width: 12
+      height: 8
+      bins: 50
+    classification:
+      width: 16
+      height: 10
+      roc_linewidth: 2
+
+# Topology analysis
+topology:
+  max_dimension: 1
+  distance_metric: 'euclidean'
+  n_bins: 50
+
+# Graph analysis  
+graph:
+  n_neighbors: 10
+  connectivity_threshold: 0.5
+  layout_algorithm: 'spring'
+  
+# Output settings
+output:
+  save_intermediate: true
+  export_data: true
+  generate_reports: true
+  
+  # File formats
+  formats:
+    figures: ['png', 'pdf']
+    data: ['csv', 'json', 'npy']
+    results: ['json', 'xlsx']
+
+# Computational settings
+computation:
+  n_jobs: -1  # Use all available cores
+  memory_limit: '8GB'
+  chunk_size: 1000
+  use_gpu: false  # Set to true if CUDA available
+
+# Logging
+logging:
+  level: 'INFO'
+  log_file: 'analysis.log'
+  console_output: true 
