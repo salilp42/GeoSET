@@ -15,6 +15,17 @@ This repository implements a geometric framework that transforms saccadic wavefo
 - **Statistical Analysis**: Power analysis, medication effects, and cross-validation
 - **Publication-Quality Visualization**: Automated figure generation with publication standards
 
+## Data Leakage Prevention
+
+The framework implements multiple safeguards to prevent information leakage between training and test sets:
+
+- **Participant-Aware Cross-Validation**: Uses `StratifiedGroupKFold` with real participant identifiers to ensure no participant's data appears in both training and test folds
+- **Fold-Internal Fitting**: All unsupervised transformations (PCA autoencoding, feature scaling) are fitted exclusively on training data within each fold
+- **Full-Dataset Feature Exclusion**: Features derived from full-dataset computations (latent coordinates, reconstruction errors) are excluded entirely from classification
+- **Leakage Sentinel Testing**: Automated validation with shuffled participant labels confirms near-chance performance (AUC ≈ 0.5)
+
+These measures ensure reliable performance estimates and prevent overly optimistic results common in small-sample biomarker studies.
+
 ## Installation
 
 ### Requirements

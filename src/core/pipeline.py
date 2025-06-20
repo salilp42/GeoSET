@@ -165,7 +165,8 @@ class GeometricAnalysisPipeline:
             latent_results['latent_vectors'],
             features['biomarkers'],
             processed_data['participant_ids'],
-            processed_data['tasks']
+            processed_data['tasks'],
+            processed_data['labels']
         )
         
         # Step 5: Feature Scalpel classification
@@ -174,7 +175,8 @@ class GeometricAnalysisPipeline:
             participant_features['comprehensive'],
             participant_features['biomarker_only'],
             participant_features['labels'],
-            processed_data['label_names']
+            processed_data['label_names'],
+            participant_features['participant_ids']
         )
         self.results['classification'] = classification_results
         
@@ -201,7 +203,8 @@ class GeometricAnalysisPipeline:
         validation_results = self.validator.validate(
             participant_features,
             processed_data,
-            features
+            features,
+            participant_features['participant_ids']
         )
         self.results['validation'] = validation_results
         
@@ -236,7 +239,8 @@ class GeometricAnalysisPipeline:
                                  latent_vectors: np.ndarray,
                                  biomarkers: np.ndarray,
                                  participant_ids: np.ndarray,
-                                 tasks: np.ndarray) -> Dict[str, np.ndarray]:
+                                 tasks: np.ndarray,
+                                 labels: np.ndarray) -> Dict[str, np.ndarray]:
         """Aggregate saccade-level features to participant level."""
         unique_pids = np.unique(participant_ids)
         n_participants = len(unique_pids)
@@ -281,7 +285,7 @@ class GeometricAnalysisPipeline:
             biomarker_features.append(biomarker_feat)
             
             # Get participant label (assuming consistent within participant)
-            participant_labels.append(processed_data['labels'][pid_mask][0])
+            participant_labels.append(labels[pid_mask][0])
         
         return {
             'comprehensive': np.array(comprehensive_features),

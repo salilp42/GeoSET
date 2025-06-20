@@ -122,6 +122,10 @@ def main():
     
     # Initialize pipeline
     print("Initializing geometric analysis pipeline...")
+    # The pipeline automatically implements data leakage prevention:
+    # - Participant-aware cross-validation ensures no participant appears in both train/test
+    # - All transformations (PCA, scaling) are fitted only on training data within each fold
+    # - Full-dataset derived features are excluded from classification
     pipeline = GeometricAnalysisPipeline(config)
     
     # Run complete analysis

@@ -7,7 +7,7 @@ and comprehensive validation metrics.
 
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
@@ -45,7 +45,8 @@ class ValidationFramework:
     def validate(self, 
                 participant_features: Dict[str, np.ndarray],
                 data: Dict[str, Any],
-                features: Dict[str, Any]) -> Dict[str, Any]:
+                features: Dict[str, Any],
+                participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Run comprehensive validation framework.
         
@@ -57,6 +58,8 @@ class ValidationFramework:
             Original data
         features : dict
             Feature extraction results
+        participant_ids : array-like, optional
+            Participant identifiers for group-aware cross-validation
             
         Returns
         -------
@@ -70,27 +73,30 @@ class ValidationFramework:
         # Ablation studies
         if self.run_ablation:
             validation_results['ablation'] = self.run_ablation_studies(
-                features, participant_features, data
+                features, participant_features, data, participant_ids
             )
         
         # Permutation testing
         validation_results['permutation'] = self.run_permutation_tests(
             participant_features['comprehensive'],
             participant_features['labels'],
-            data['label_names']
+            data['label_names'],
+            participant_ids
         )
         
         # Fold-by-fold analysis
         validation_results['fold_analysis'] = self.run_fold_analysis(
             participant_features['comprehensive'],
             participant_features['labels'],
-            data['label_names']
+            data['label_names'],
+            participant_ids
         )
         
         # Stability analysis
         validation_results['stability'] = self.assess_stability(
             participant_features['comprehensive'],
-            participant_features['labels']
+            participant_features['labels'],
+            participant_ids
         )
         
         # Overall validation summary
@@ -101,7 +107,8 @@ class ValidationFramework:
     def run_ablation_studies(self, 
                            features: Dict[str, Any],
                            participant_features: Dict[str, np.ndarray],
-                           data: Dict[str, Any]) -> Dict[str, Any]:
+                           data: Dict[str, Any],
+                           participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Run ablation studies to assess feature group importance."""
         print("Running ablation studies...")
         
@@ -117,7 +124,8 @@ class ValidationFramework:
         baseline_auc = self._get_mean_pairwise_auc(
             participant_features['comprehensive'],
             participant_features['labels'],
-            data['label_names']
+            data['label_names'],
+            participant_ids
         )
         
         ablation_results = {
@@ -141,7 +149,8 @@ class ValidationFramework:
                 ablated_auc = self._get_mean_pairwise_auc(
                     ablated_features,
                     participant_features['labels'],
-                    data['label_names']
+                    data['label_names'],
+                    participant_ids
                 )
                 
                 performance_drop = baseline_auc - ablated_auc
@@ -166,12 +175,13 @@ class ValidationFramework:
     def run_permutation_tests(self,
                             features: np.ndarray,
                             labels: np.ndarray,
-                            label_names: Dict[int, str]) -> Dict[str, Any]:
+                            label_names: Dict[int, str],
+                            participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Run permutation tests for statistical significance."""
         print(f"Running permutation tests ({self.n_permutations} permutations)...")
         
         # True performance
-        true_auc = self._get_mean_pairwise_auc(features, labels, label_names)
+        true_auc = self._get_mean_pairwise_auc(features, labels, label_names, participant_ids)
         
         # Permutation distribution
         permuted_aucs = []
@@ -181,7 +191,7 @@ class ValidationFramework:
             permuted_labels = np.random.permutation(labels)
             
             # Calculate AUC with shuffled labels
-            perm_auc = self._get_mean_pairwise_auc(features, permuted_labels, label_names)
+            perm_auc = self._get_mean_pairwise_auc(features, permuted_labels, label_names, participant_ids)
             permuted_aucs.append(perm_auc)
         
         permuted_aucs = np.array(permuted_aucs)
@@ -201,7 +211,8 @@ class ValidationFramework:
     def run_fold_analysis(self,
                          features: np.ndarray,
                          labels: np.ndarray,
-                         label_names: Dict[int, str]) -> Dict[str, Any]:
+                         label_names: Dict[int, str],
+                         participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Analyze performance fold-by-fold to detect overfitting."""
         print("Running fold-by-fold analysis...")
         
@@ -221,12 +232,19 @@ class ValidationFramework:
             # Convert to binary
             binary_labels = (pair_labels == label2).astype(int)
             
-            # Cross-validation analysis
-            cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
+            # Use participant-aware CV if participant IDs provided
+            if participant_ids is not None:
+                pair_participant_ids = participant_ids[pair_mask]
+                cv = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
+                cv_splits = cv.split(pair_features, binary_labels, groups=pair_participant_ids)
+            else:
+                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                cv_splits = cv.split(pair_features, binary_labels)
+            
             fold_aucs = []
             fold_predictions = []
             
-            for fold_idx, (train_idx, val_idx) in enumerate(cv.split(pair_features, binary_labels)):
+            for fold_idx, (train_idx, val_idx) in enumerate(cv_splits):
                 X_train, X_val = pair_features[train_idx], pair_features[val_idx]
                 y_train, y_val = binary_labels[train_idx], binary_labels[val_idx]
                 
@@ -272,7 +290,7 @@ class ValidationFramework:
         
         return fold_results
     
-    def assess_stability(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, Any]:
+    def assess_stability(self, features: np.ndarray, labels: np.ndarray, participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """Assess model stability across different random seeds."""
         print("Assessing model stability...")
         
@@ -292,7 +310,7 @@ class ValidationFramework:
             sub_labels = labels[subsample_idx]
             
             # Calculate AUC with this subsample
-            auc = self._get_mean_pairwise_auc(sub_features, sub_labels, {1: 'A', 4: 'B', 5: 'C', 6: 'D'})
+            auc = self._get_mean_pairwise_auc(sub_features, sub_labels, {1: 'A', 4: 'B', 5: 'C', 6: 'D'}, participant_ids)
             seed_aucs.append(auc)
         
         stability_results = {
@@ -337,7 +355,8 @@ class ValidationFramework:
     def _get_mean_pairwise_auc(self, 
                               features: np.ndarray,
                               labels: np.ndarray,
-                              label_names: Dict[int, str]) -> float:
+                              label_names: Dict[int, str],
+                              participant_ids: Optional[np.ndarray] = None) -> float:
         """Calculate mean AUC across all pairwise comparisons."""
         unique_labels = np.unique(labels)
         pair_combinations = list(combinations(unique_labels, 2))
@@ -356,11 +375,18 @@ class ValidationFramework:
             # Convert to binary
             binary_labels = (pair_labels == label2).astype(int)
             
-            # Quick cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            # Use participant-aware CV if participant IDs provided
+            if participant_ids is not None:
+                pair_participant_ids = participant_ids[pair_mask]
+                cv = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
+                cv_splits = cv.split(pair_features, binary_labels, groups=pair_participant_ids)
+            else:
+                cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                cv_splits = cv.split(pair_features, binary_labels)
+            
             fold_aucs = []
             
-            for train_idx, val_idx in cv.split(pair_features, binary_labels):
+            for train_idx, val_idx in cv_splits:
                 X_train, X_val = pair_features[train_idx], pair_features[val_idx]
                 y_train, y_val = binary_labels[train_idx], binary_labels[val_idx]
                 

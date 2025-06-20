@@ -11,7 +11,7 @@ import warnings
 from typing import Dict, List, Tuple, Optional, Any
 from itertools import combinations
 from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score, StratifiedGroupKFold, cross_val_predict
 from sklearn.metrics import roc_auc_score, roc_curve, accuracy_score, f1_score, matthews_corrcoef
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -63,7 +63,8 @@ class FeatureScalpelClassifier:
                    comprehensive_features: np.ndarray,
                    biomarker_features: np.ndarray,
                    labels: np.ndarray,
-                   label_names: Dict[int, str]) -> Dict[str, Any]:
+                   label_names: Dict[int, str],
+                   participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Fit Feature Scalpel classifiers and predict all pairwise comparisons.
         
@@ -77,6 +78,8 @@ class FeatureScalpelClassifier:
             Participant labels
         label_names : dict
             Mapping from label codes to descriptive names
+        participant_ids : array-like, optional
+            Participant identifiers for group-aware cross-validation
             
         Returns
         -------
@@ -112,6 +115,9 @@ class FeatureScalpelClassifier:
             pair_comprehensive = comprehensive_features[pair_mask]
             pair_biomarker = biomarker_features[pair_mask]
             
+            # Extract participant IDs for this pair if provided
+            pair_participant_ids = participant_ids[pair_mask] if participant_ids is not None else None
+            
             # Convert to binary labels
             binary_labels = (pair_labels == label2).astype(int)
             
@@ -127,7 +133,7 @@ class FeatureScalpelClassifier:
                 feature_type = 'biomarker'
                 
             # Perform classification
-            pair_result = self._classify_pair(features, binary_labels, pair_name)
+            pair_result = self._classify_pair(features, binary_labels, pair_name, pair_participant_ids)
             pair_result['strategy'] = strategy
             pair_result['feature_type'] = feature_type
             pair_result['n_features'] = features.shape[1]
@@ -202,7 +208,7 @@ class FeatureScalpelClassifier:
         # Default to comprehensive for other pairs
         return 'comprehensive'
     
-    def _classify_pair(self, features: np.ndarray, labels: np.ndarray, pair_name: str) -> Dict[str, Any]:
+    def _classify_pair(self, features: np.ndarray, labels: np.ndarray, pair_name: str, participant_ids: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Perform binary classification for a single pair.
         
@@ -214,14 +220,21 @@ class FeatureScalpelClassifier:
             Binary labels for this pair
         pair_name : str
             Descriptive name for this comparison
+        participant_ids : array-like, optional
+            Participant identifiers for this pair
             
         Returns
         -------
         dict
             Classification results including metrics and ROC curve
         """
-        # Setup cross-validation
-        cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+        # Setup cross-validation with participant-aware splitting if IDs provided
+        if participant_ids is not None:
+            cv = StratifiedGroupKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+            cv_method = 'participant_aware'
+        else:
+            cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+            cv_method = 'standard'
         
         # Initialize classifier based on feature size and availability
         if features.shape[1] > 500 and LGBM_AVAILABLE:
@@ -252,8 +265,12 @@ class FeatureScalpelClassifier:
         ])
         
         # Cross-validation predictions for ROC curve
-        y_scores = cross_val_predict(pipeline, features, labels, cv=cv, method='predict_proba')[:, 1]
-        y_pred = cross_val_predict(pipeline, features, labels, cv=cv)
+        if participant_ids is not None:
+            y_scores = cross_val_predict(pipeline, features, labels, cv=cv, groups=participant_ids, method='predict_proba')[:, 1]
+            y_pred = cross_val_predict(pipeline, features, labels, cv=cv, groups=participant_ids)
+        else:
+            y_scores = cross_val_predict(pipeline, features, labels, cv=cv, method='predict_proba')[:, 1]
+            y_pred = cross_val_predict(pipeline, features, labels, cv=cv)
         
         # Compute metrics
         auc = roc_auc_score(labels, y_scores)
@@ -280,7 +297,8 @@ class FeatureScalpelClassifier:
             },
             'predictions': y_pred,
             'probabilities': y_scores,
-            'cv_folds': self.cv_folds
+            'cv_folds': self.cv_folds,
+            'participant_ids': participant_ids
         }
     
     def predict_new_data(self, 
